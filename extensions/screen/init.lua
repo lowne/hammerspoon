@@ -10,11 +10,13 @@ local screen = require "hs.screen.internal"
 local geometry = require "hs.geometry"
 local imagemod = require "hs.image"
 
-screen.watcher = require "hs.screen.watcher"
+local watcher = require "hs.screen.watcher"
+local timer = require "hs.timer"
 
 local type,pairs,ipairs,min,max,cos,atan,huge=type,pairs,ipairs,math.min,math.max,math.cos,math.atan,math.huge
 local tinsert,tremove,tsort,tunpack=table.insert,table.remove,table.sort,table.unpack
 local getmetatable,pcall=getmetatable,pcall
+local setmetatable,tostring=setmetatable,tostring
 
 local screenObject = hs.getObjectMetatable("hs.screen")
 
@@ -391,4 +393,32 @@ function screenObject:shotAsJPG(filePath, screenRect,...)
 end
 
 getmetatable(screen).__call=function(_,...)return screen.find(...)end
+
+-- wrap screenwatcher
+screen.watcher={delay=0.1}
+local function newWatcher(constructor,cb)
+  local tmr,arg
+  if screen.watcher.delay>0 then
+    tmr=timer.delayed.new(screen.watcher.delay,function()
+      local screens=screen.allScreens()
+      for _,s in ipairs(screens) do
+        if s:id()==0 or s:fullFrame().area==0 then return tmr:start(5) end
+        --        print('===========',s:name(),s:frame(),s:id())
+      end
+      cb(arg)
+    end)
+  end
+  return setmetatable({
+    start=function(self) self._watcher:start() return self end,
+    stop=function(self)
+      if tmr then tmr:stop() end
+      self._watcher:stop()
+      return self
+    end,
+    _watcher=constructor(tmr and function(_arg) arg=_arg tmr:start() end or cb)
+  },{__tostring=function(t)return tostring(t._watcher) end})
+end
+function screen.watcher.new(cb) return newWatcher(watcher.new,cb) end
+function screen.watcher.newWithActiveScreen(cb) return newWatcher(watcher.newWithActiveScreen,cb) end
+
 return screen
